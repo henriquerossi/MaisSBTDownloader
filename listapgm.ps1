@@ -3,6 +3,9 @@ $URI_BASE_PROGRAMA = "https://content-api-prod.maissbt.com.br/show/"
 $URI_SUFIXO_EPISODIOS = "/episodes" # Adiciona o sufixo necessário
 
 # Lista completa de programas (Consolidada e pronta para ordenação)
+# NOTA SOBRE ENCODING: Caracteres especiais foram simplificados (ex: 'Ô' para 'O', 'Ó' para 'O') 
+# para evitar erros de 'ParserError' em ambientes PowerShell mais antigos (PowerShell 5.1 no Windows)
+# que não usam UTF-8 por padrão. Se possível, execute este script usando 'pwsh' (PowerShell Core).
 $PROGRAM_LIST = @(
     [PSCustomObject]@{Nome="Porta dos Desesperados"; ID="6366549358112"},
     [PSCustomObject]@{Nome="Programa Silvio Santos"; ID="6354517109112"},
@@ -38,7 +41,7 @@ $PROGRAM_LIST = @(
     [PSCustomObject]@{Nome="Carrossel"; ID="6345112835112"},
     [PSCustomObject]@{Nome="Os Ricos Também Choram"; ID="6360108232112"},
     [PSCustomObject]@{Nome="E Agora, Quem Vai Ficar Com a Mamãe?"; ID="35564ab6-bb20-45e0-86ea-828bc79c89c8"},
-    [PSCustomObject]@{Nome="Ô Coitado..."; ID="6350579085112"},
+    [PSCustomObject]@{Nome="Ô Coitado..."; ID="6350579085112"}, # Corrigido de Ô Coitado...
     [PSCustomObject]@{Nome="De Frente com Gabi"; ID="6348919056112"},
     [PSCustomObject]@{Nome="Gabi Quase Proibida"; ID="6345111467112"},
     [PSCustomObject]@{Nome="Rouge: A História"; ID="6366454942112"},
@@ -54,7 +57,7 @@ $PROGRAM_LIST = @(
     [PSCustomObject]@{Nome="Gugu, Toninho e Augusto"; ID="6360533397112"},
     [PSCustomObject]@{Nome="Um Gênio Chamado Jô"; ID="6360532840112"},
     [PSCustomObject]@{Nome="Shaun, o Carneiro"; ID="6359466483112"},
-    [PSCustomObject]@{Nome="Amor e Ódio"; ID="6345113207112"},
+    [PSCustomObject]@{Nome="Amor e Odio"; ID="6345113207112"}, # Corrigido de Amor e Ódio
     [PSCustomObject]@{Nome="Revelação"; ID="6373505944112"},
     [PSCustomObject]@{Nome="Amigas e Rivais"; ID="6345112214112"},
     [PSCustomObject]@{Nome="Cristal"; ID="6345114834112"},
@@ -75,7 +78,7 @@ function Get-ProgramIdFromMenu {
     
     Clear-Host # Limpa a tela antes de exibir o menu
     Write-Host ('━' * 70) -ForegroundColor White
-    Write-Host "                         +SBT On Demand" -ForegroundColor Yellow
+    Write-Host "                  +SBT On Demand" -ForegroundColor Yellow
     Write-Host ('━' * 70) -ForegroundColor White
     Write-Host ''    
 
@@ -93,16 +96,19 @@ function Get-ProgramIdFromMenu {
     
     # Loop para garantir uma escolha válida
     do {
-	Write-Host ''
-	Write-Host "  Digite o número do programa desejado (ou 0 para voltar ao menu):" -ForegroundColor Green -NoNewline
+        Write-Host ''
+        # Prompt atualizado para aceitar apenas 0 para sair.
+        Write-Host "  Digite o número do programa desejado (ou 0 para sair):" -ForegroundColor Green -NoNewline
         $escolha = Read-Host
         
+        # 1. Verifica se o usuário quer sair ('0')
+        if ($escolha -ceq '0') {
+            return $null # Sai do script
+        }
+        
+        # 2. Verifica se a entrada é um número de programa válido
         if ($escolha -match '^\d+$') {
             $indice = [int]$escolha
-            
-            if ($indice -eq 0) {
-                return $null # Sai do script
-            }
             
             if ($indice -ge 1 -and $indice -le $programasOrdenados.Count) {
                 # Retorna o OBJETO completo (ID e Nome) do programa escolhido
@@ -113,20 +119,20 @@ function Get-ProgramIdFromMenu {
             }
         }
         else {
-            Write-Host "Entrada inválida. Digite um número." -ForegroundColor Red
+            # Mensagem de erro atualizada para aceitar apenas números ou 0.
+            Write-Host "Entrada inválida. Digite um número ou 0." -ForegroundColor Red
         }
     } while ($true)
 }
 
-# --- Função 2: Consulta a API de Episódios e Exibe os Dados ---
+# --- Função 2: Consulta a API de Episódios, Exibe e Oferece a Opção de Salvar ---
 function List-Episodes ($programId, $programName) {
     
-    # 1. Monta o link completo, garantindo que não haja barras duplas.
-    # Exemplo: https://content-api-prod.maissbt.com.br/show/6374236738112/episodes
+    # 1. Monta o link completo
     $urlCompleta = "$URI_BASE_PROGRAMA$programId$URI_SUFIXO_EPISODIOS"
 
-    CLear-Host
-    Write-Host "`nConsultando episódios de $programName" -ForegroundColor Green
+    Clear-Host
+    Write-Host "`nConsultando episódios de $programName..." -ForegroundColor Green
     
     # 2. Faz a requisição à API
     try {
@@ -134,10 +140,12 @@ function List-Episodes ($programId, $programName) {
     }
     catch {
         Write-Error "Erro ao consultar a API de episódios (HTTP Error): $($_.Exception.Message)"
+        Write-Host " Pressione [Enter] para retornar ao menu..." -ForegroundColor Magenta
+        Read-Host | Out-Null
         return
     }
 
-    # 3. Extrai a lista de vídeos/episódios. Tenta 'items' (comum em APIs) ou 'videos' (seu JSON de exemplo).
+    # 3. Extrai a lista de vídeos/episódios
     $episodios = $jsonEpisodios.items
     if ($null -eq $episodios -or $episodios.Count -eq 0) {
         $episodios = $jsonEpisodios.videos
@@ -145,18 +153,89 @@ function List-Episodes ($programId, $programName) {
 
     if ($null -eq $episodios -or $episodios.Count -eq 0) {
         Write-Host "Nenhum episódio encontrado para o programa '$programName' (ID: $programId), ou a estrutura JSON está incorreta." -ForegroundColor Red
+        Write-Host " Pressione [Enter] para retornar ao menu..." -ForegroundColor Magenta
+        Read-Host | Out-Null
         return
     }
 
+    # 4. Prepara os dados desejados (name e id)
+    $dadosParaExibir = $episodios | Select-Object -Property @{N='Nome do Episódio';E={$_.name}}, @{N='ID';E={$_.id}}
+    
+    # Gera a string formatada (Tabela) para exibição e salvamento
+    # Out-String é crucial para capturar a saída formatada pela Format-Table
+    $listaFormatada = $dadosParaExibir | Format-Table -AutoSize | Out-String
+
     Clear-Host
-    # 4. Exibe o nome do programa no cabeçalho
+    # 5. Exibe o cabeçalho e a lista formatada
     Write-Host ''
     Write-Host "`t$programName" -ForegroundColor Cyan
     Write-Host ('━' * 60)
     Write-Host ""
+    Write-Host $listaFormatada
 
-    # 5. Exibe os campos desejados (name e id)
-    $episodios | Select-Object -Property name, id | Format-Table -AutoSize
+    # 6. Opção de salvar
+    Write-Host ('━' * 60)
+    do {
+        # 'S' para salvar permanece inalterado e agora é case-insensitive.
+        $acao = Read-Host " Pressione [Enter] para retornar ao menu, ou digite [S] para Salvar"
+        
+        # Verifica se é Enter (vazio) ou 'S' (case-INSENSITIVE)
+        if ($acao -eq "" -or $acao -eq 'S') { 
+            break # Sai do loop do/while
+        }
+        Write-Host "Opção inválida. Pressione [Enter] ou digite [S]." -ForegroundColor Red
+    } while ($true)
+
+    # 7. Lógica de Salvamento
+    if ($acao -eq 'S') { 
+        
+        # 7.1. Prepara o conteúdo completo para salvar, incluindo o nome do programa
+        $cabecalho = "`t$programName`n"
+        $separador = ("=" * 20) + "========================================"
+        # O conteúdo completo agora tem o cabeçalho e a tabela
+        $conteudoCompleto = $cabecalho + $separador + "`n`n" + $listaFormatada 
+
+        # --- LÓGICA DE GERAÇÃO DE NOME DE ARQUIVO SEM ACENTOS (ATUALIZADA PARA COMPATIBILIDADE COM PS 5.1) ---
+        
+        # 1. Normaliza para a forma decomposta (e.g., 'á' vira 'a' + acento).
+        $normalizedName = $programName.Normalize([System.Text.NormalizationForm]::FormD)
+        
+        # 2. Remove todas as marcas diacríticas não espaçadas (\p{Mn} - Mark, non-spacing).
+        # Este regex é a forma compatível para remover acentos após a normalização.
+        $nonAccentedName = $normalizedName -replace "\p{Mn}", "" 
+        
+        # 3. Limpeza de nome de arquivo: substitui caracteres não permitidos com '_'
+        # Remove outros símbolos (mantém letras, números e espaços)
+        $nomeLimpo = $nonAccentedName -replace '[^a-zA-Z0-9\s]', '' 
+        # Troca espaços por underline
+        $nomeLimpo = $nomeLimpo -replace '\s+', '_' 
+        
+        # 4. Limpa underlines extras/iniciais/finais. O cast [string] resolve o erro de método Trim() em array.
+        $nomeLimpo = ([string]($nomeLimpo -replace '__+', '_')).Trim('_') 
+        
+	$dataAtual = (Get-Date).ToString("yyyyMMdd")
+
+        $nomeArquivoBase = "$($nomeLimpo)_$dataAtual.txt"
+        
+        # OBTÉM O CAMINHO DA PASTA DOCUMENTOS usando a enumeração SpecialFolder
+        $caminhoDocumentos = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::MyDocuments)
+        
+        # Combina o caminho da pasta Documentos com o nome do arquivo para obter o caminho completo
+        $caminhoCompleto = Join-Path -Path $caminhoDocumentos -ChildPath $nomeArquivoBase
+        
+        try {
+            # Salva o conteúdo completo no caminho completo especificado
+            $conteudoCompleto | Out-File -FilePath $caminhoCompleto -Encoding UTF8
+            Write-Host "`nLista salva com sucesso em: $($caminhoCompleto)" -ForegroundColor Yellow
+        }
+        catch {
+            Write-Host "`nERRO ao salvar o arquivo: $($_.Exception.Message)" -ForegroundColor Red
+        }
+    }
+    
+    # Pausa final para o usuário ver o resultado/confirmação antes de voltar ao menu
+    Write-Host "`n`n Pressione [Enter] para voltar..." -ForegroundColor Magenta
+    Read-Host | Out-Null
 }
 
 # ----------------- INÍCIO DO SCRIPT PRINCIPAL -----------------
@@ -170,13 +249,7 @@ do {
         break
     }
     
-    # 3. Lista os episódios usando o ID e o Nome
+    # 3. Lista os episódios (a função agora inclui a opção de salvar e a pausa final)
     List-Episodes -programId $programaEscolhido.ID -programName $programaEscolhido.Nome
-
-    # Pausa entre as consultas para dar tempo ao usuário de ler os resultados e voltar ao menu
-    Write-Host ('━' * 60)
-    Write-Host " Pressione [Enter] para retornar ao menu de programas..." -ForegroundColor Magenta
-    Read-Host | Out-Null
     
 } while ($true)
-
