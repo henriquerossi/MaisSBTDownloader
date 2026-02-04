@@ -129,47 +129,39 @@ function Save-AllScheduleToFile {
         [psobject[]]$GroupedData
     )
 
-    $FileName = "Programacao_SBTRaiz_$(Get-Date -Format 'yyyyMMdd').txt"
+    # Define o nome do arquivo como .csv
+    $FileName = "Programacao_SBTRaiz_$(Get-Date -Format 'yyyyMMdd').csv"
     $FullPath = Join-Path -Path $DocumentsPath -ChildPath $FileName
 
-    Write-Host "`nIniciando o salvamento da programação..." -ForegroundColor Cyan
+    Write-Host "`nIniciando a exportação para CSV..." -ForegroundColor Cyan
 
-    # Prepara o conteúdo, formatando cada dia
-    $AllContent = $GroupedData | ForEach-Object {
-        $ReadableDate = [datetime]::ParseExact($_.Name, "yyyy-MM-dd", [cultureinfo]::InvariantCulture).ToString("dddd, dd 'de' MMMM 'de' yyyy")
-
-        # Cabeçalho do dia
-        "========================================================================================="
-        "     GRADE DE $ReadableDate  "
-        "========================================================================================="
-        
-        # Conteúdo do dia formatado COMO TABELA
-        # Usamos Format-Table e Out-String para garantir que a tabela seja salva corretamente
-        $_.Group | Sort-Object StartTimeMs | Format-Table -Property @{
-            Label = "Hora"; Expression = {$_.HoraPura}; Width = 10
-        }, @{
-            Label = "Título"; Expression = {$_.Title}; Width = 40
-        }, @{
-            Label = "Episódio/Detalhe"; Expression = {$_.EpisodeName}; Width = 40
-        }, @{
-            Label = "Media ID"; Expression = {$_.MediaId}; Width = 44
-        } -Wrap | Out-String -Width 197 # Usamos uma largura grande (197) para prevenir quebras de linha indesejadas
-        
-        "`n" # Duas linhas extras para separar bem os dias
+    # Expandimos todos os grupos em uma única lista plana para o CSV
+    $AllRows = foreach ($Day in $GroupedData) {
+        $Day.Group | Sort-Object StartTimeMs | ForEach-Object {
+            [PSCustomObject]@{
+                Data           = $_.DateKey
+                Hora           = $_.HoraPura
+                Titulo         = $_.Title
+                Episodio       = $_.EpisodeName
+                MediaID        = $_.MediaId
+            }
+        }
     }
 
     try {
-        # Salva o conteúdo no arquivo, usando UTF8 para garantir caracteres especiais
-        $AllContent | Out-File -FilePath $FullPath -Encoding UTF8
-        Write-Host ''
-        Write-Host 'Programação salva' -ForegroundColor Green
+        # Exporta para CSV usando o delimitador ponto e vírgula (padrão Excel Brasil)
+        # O parâmetro -NoTypeInformation remove o cabeçalho chato do PowerShell
+        $AllRows | Export-Csv -Path $FullPath -NoTypeInformation -Delimiter ";" -Encoding UTF8
+        
+        Write-Host "`nArquivo CSV gerado com sucesso em: $FullPath" -ForegroundColor Green
     }
     catch {
-        Write-Error "Erro ao salvar o arquivo: $($_.Exception.Message)"
+        Write-Error "Erro ao salvar o arquivo CSV: $($_.Exception.Message)"
     }
     
-    Write-Host "`n`n Pressione ENTER para voltar ao menu..." -ForegroundColor Magenta
+    Write-Host "`n Pressione ENTER para voltar ao menu..." -ForegroundColor Magenta
     $null = Read-Host
+
 }
 
 
@@ -210,7 +202,7 @@ function Select-Day {
 
     [int]$SelectedNumber = 0 
     
-    Write-Host "`nS - Salvar Programação Completa em TXT" -ForegroundColor Green
+    Write-Host "`nS - Salvar Programação Completa em CSV" -ForegroundColor Green
     Write-Host -NoNewline " (na pasta Documentos)" -ForegroundColor Yellow
     Write-Host ''
     Write-Host "`n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -219,12 +211,12 @@ function Select-Day {
 
         $Selection = Read-Host "Digite o número do dia, S para salvar a programação, ou Q para Sair"
 
-        if ($Selection -ceq 'q') {
+        if ($Selection -eq 'q') {
             return $null
         }
 
         # NOVO: Se o usuário digitar 's', retornamos um sinal especial
-        if ($Selection -ceq 's') {
+        if ($Selection -eq 's') {
             return "SaveAll"
         }
 
@@ -490,7 +482,7 @@ if ($ProgrammationData) {
                 $programIdDisplay = if ($programIdMap.ContainsKey($bitrateVariant)) {
                     $programIdMap[$bitrateVariant]
                 } else {
-                    "N/A (Não Mapeado)"
+                    "N/A (Não Mapeado)\n"
                 }
 
                 $bitrateKbs = if ($bitrateVariant) { Format-Bitrate $bitrateVariant } else { 'N/A' }
@@ -687,7 +679,7 @@ if ($ProgrammationData) {
             
         }
         default {
-            Write-Host "Opção inválida. Por favor, digite 1, 2 ou 3." -ForegroundColor Red
+            Write-Host "Opção inválida. Por favor, digite 1, 2, 3, 4 ou 5." -ForegroundColor Red
             Start-Sleep -Seconds 2
         }
     }
