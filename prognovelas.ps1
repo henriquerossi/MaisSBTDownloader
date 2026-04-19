@@ -65,47 +65,39 @@ function Save-AllScheduleToFile {
         [psobject[]]$GroupedData
     )
 
-    $FileName = "Programacao_SBTNovelas_$(Get-Date -Format 'yyyyMMdd').txt"
+    # Define o nome do arquivo como .csv
+    $FileName = "Programacao_MaisNovelas_$(Get-Date -Format 'yyyyMMdd').csv"
     $FullPath = Join-Path -Path $DocumentsPath -ChildPath $FileName
 
-    Write-Host "`nIniciando o salvamento da programação..." -ForegroundColor Cyan
+    Write-Host "`nIniciando a exportação para CSV..." -ForegroundColor Cyan
 
-    # Prepara o conteúdo, formatando cada dia
-    $AllContent = $GroupedData | ForEach-Object {
-        $ReadableDate = [datetime]::ParseExact($_.Name, "yyyy-MM-dd", [cultureinfo]::InvariantCulture).ToString("dddd, dd 'de' MMMM 'de' yyyy")
-
-        # Cabeçalho do dia
-        "========================================================================================="
-        "     GRADE DE $ReadableDate  "
-        "========================================================================================="
-        
-        # Conteúdo do dia formatado COMO TABELA
-        # Usamos Format-Table e Out-String para garantir que a tabela seja salva corretamente
-        $_.Group | Sort-Object StartTimeMs | Format-Table -Property @{
-            Label = "Hora"; Expression = {$_.HoraPura}; Width = 10
-        }, @{
-            Label = "Título"; Expression = {$_.Title}; Width = 40
-        }, @{
-            Label = "Episódio/Detalhe"; Expression = {$_.EpisodeName}; Width = 40
-        }, @{
-            Label = "Media ID"; Expression = {$_.MediaId}; Width = 44
-        } -Wrap | Out-String -Width 197 # Usamos uma largura grande (197) para prevenir quebras de linha indesejadas
-        
-        "`n" # Duas linhas extras para separar bem os dias
+    # Expandimos todos os grupos em uma única lista plana para o CSV
+    $AllRows = foreach ($Day in $GroupedData) {
+        $Day.Group | Sort-Object StartTimeMs | ForEach-Object {
+            [PSCustomObject]@{
+                Data           = $_.DateKey
+                Hora           = $_.HoraPura
+                Titulo         = $_.Title
+                Episodio       = $_.EpisodeName
+                MediaID        = $_.MediaId
+            }
+        }
     }
 
     try {
-        # Salva o conteúdo no arquivo, usando UTF8 para garantir caracteres especiais
-        $AllContent | Out-File -FilePath $FullPath -Encoding UTF8
-        Write-Host ''
-        Write-Host 'Programação salva' -ForegroundColor Green
+        # Exporta para CSV usando o delimitador ponto e vírgula (padrão Excel Brasil)
+        # O parâmetro -NoTypeInformation remove o cabeçalho chato do PowerShell
+        $AllRows | Export-Csv -Path $FullPath -NoTypeInformation -Delimiter ";" -Encoding UTF8
+        
+        Write-Host "`nArquivo CSV gerado com sucesso em: $FullPath" -ForegroundColor Green
     }
     catch {
-        Write-Error "Erro ao salvar o arquivo: $($_.Exception.Message)"
+        Write-Error "Erro ao salvar o arquivo CSV: $($_.Exception.Message)"
     }
     
-    Write-Host "`n`n Pressione ENTER para voltar ao menu..." -ForegroundColor Magenta
+    Write-Host "`n Pressione ENTER para voltar ao menu..." -ForegroundColor Magenta
     $null = Read-Host
+
 }
 
 
@@ -124,9 +116,9 @@ function Select-Day {
     $DayCounter = 1
     
     Clear-Host
-    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Magenta
-    Write-Host "                                PROGRAMAÇÃO +SBT NOVELAS             " -ForegroundColor Cyan
-    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Magenta
+    Escrever-Divisor -Cor Magenta
+    Escrever-Centro "PROGRAMAÇÃO +NOVELAS" -Cor Cyan
+    Escrever-Divisor -Cor Magenta
     
     # NOVA OPÇÃO DE SALVAR TUDO
 
@@ -146,21 +138,30 @@ function Select-Day {
 
     [int]$SelectedNumber = 0 
     
-    Write-Host "`nS - Salvar Programação Completa em TXT" -ForegroundColor Green
-    Write-Host -NoNewline " (na pasta Documentos)" -ForegroundColor Yellow
-    Write-Host ''
-    Write-Host "`n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    Write-Host ""
+    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
     while ($true) {
 
-        $Selection = Read-Host "Digite o número do dia, S para salvar a programação, ou Q para Sair"
+	# Exibe a primeira parte em cor padrão
+	Write-Host "Digite o número do dia, " -NoNewline
 
-        if ($Selection -ceq 'q') {
+	# Exibe a parte específica em Verde
+	Write-Host "S para salvar a programação" -ForegroundColor Green -NoNewline
+
+	Write-Host ", ou " -NoNewline
+
+	Write-Host "Q para Sair " -ForegroundColor Red -NoNewline
+
+	# Exibe o restante e abre o campo de entrada
+	$Selection = Read-Host
+
+        if ($Selection -eq 'q') {
             return $null
         }
 
         # NOVO: Se o usuário digitar 's', retornamos um sinal especial
-        if ($Selection -ceq 's') {
+        if ($Selection -eq 's') {
             return "SaveAll"
         }
 
@@ -197,11 +198,11 @@ function Show-DaySchedule {
     $ReadableDate = [datetime]::ParseExact($DateKey, "yyyy-MM-dd", [cultureinfo]::InvariantCulture).ToString("dddd, dd 'de' MMMM 'de' yyyy")
     
     # Linhas de separação e título mais claros
-    Write-Host ('━' * 97) -ForegroundColor Magenta
-    Write-Host "                                        +SBT NOVELAS" -ForegroundColor Cyan
-    Write-Host ('━' * 97) -ForegroundColor Magenta
+    Escrever-Divisor
+    Escrever-Centro "+Novelas" -Cor Cyan
+    Escrever-Divisor
     Write-Host " Grade de $ReadableDate" -ForegroundColor Yellow
-    Write-Host ('━' * 97) -ForegroundColor Magenta
+    Escrever-Divisor
 
     # Adicionado -Wrap para quebrar as linhas de texto longos e manter a formatação de tabela
     $SelectedGroup.Group | Sort-Object StartTimeMs | Format-Table -Property @{
@@ -215,7 +216,7 @@ function Show-DaySchedule {
     } -AutoSize -Wrap
     
     # Linha de separação final
-    Write-Host ('━' * 97) -ForegroundColor Magenta
+    Escrever-Divisor
 }
 
 # ----------------------------------------
